@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rest Period Timer</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f4f3ee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .card {
+    background: #ffffff;
+    border-radius: 16px;
+    border: 1px solid #e5e3da;
+    padding: 2rem 2.5rem 2.5rem;
+    width: 340px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  }
+  h1 {
+    font-size: 15px;
+    font-weight: 500;
+    color: #5f5e5a;
+    margin: 0;
+    text-align: center;
+  }
+  #display {
+    font-size: 60px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: #1a1a18;
+  }
+  #ring-wrap {
+    width: 180px;
+    height: 8px;
+    background: #eeece4;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  #ring-fill {
+    height: 100%;
+    width: 100%;
+    background: #378add;
+    transition: width 0.2s linear;
+  }
+  .row { display: flex; gap: 8px; }
+  button {
+    font-family: inherit;
+    font-size: 14px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid #d3d1c7;
+    background: #ffffff;
+    color: #1a1a18;
+    cursor: pointer;
+  }
+  button:hover { background: #f4f3ee; }
+  button:active { transform: scale(0.98); }
+  #startPause {
+    min-width: 110px;
+    font-weight: 500;
+    background: #1a1a18;
+    color: #ffffff;
+    border: none;
+  }
+  #startPause:hover { background: #2c2c2a; }
+  #reset { min-width: 90px; }
+  input[type="number"] {
+    width: 70px;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid #d3d1c7;
+  }
+  .custom-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #5f5e5a;
+  }
+  label.toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #5f5e5a;
+    cursor: pointer;
+  }
+  input[type="checkbox"] { width: 16px; height: 16px; }
+  #setCounter {
+    font-size: 13px;
+    color: #888780;
+    min-height: 16px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Rest period timer</h1>
+
+  <div id="display">01:30</div>
+
+  <div id="ring-wrap">
+    <div id="ring-fill"></div>
+  </div>
+
+  <div class="row">
+    <button id="p60">60 sec</button>
+    <button id="p90">90 sec</button>
+    <button id="p120">2 min</button>
+  </div>
+
+  <div class="custom-row">
+    <label for="custom">Custom (sec)</label>
+    <input type="number" id="custom" min="5" max="600" step="5" value="90" />
+    <button id="setCustom">Set</button>
+  </div>
+
+  <label class="toggle">
+    <input type="checkbox" id="autoRestart" />
+    Auto-restart between sets
+  </label>
+
+  <div class="row">
+    <button id="startPause">Start</button>
+    <button id="reset">Reset</button>
+  </div>
+
+  <div id="setCounter"></div>
+</div>
+
+<script>
+let total = 90;
+let remaining = 90;
+let running = false;
+let intervalId = null;
+let setCount = 0;
+
+const display = document.getElementById('display');
+const ringFill = document.getElementById('ring-fill');
+const startPauseBtn = document.getElementById('startPause');
+const autoRestartBox = document.getElementById('autoRestart');
+const setCounter = document.getElementById('setCounter');
+
+function format(s) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+}
+
+function render() {
+  display.textContent = format(Math.max(0, remaining));
+  const pct = total > 0 ? Math.max(0, (remaining/total)*100) : 0;
+  ringFill.style.width = pct + '%';
+  if (remaining <= 5 && remaining > 0) {
+    display.style.color = '#a32d2d';
+  } else if (remaining <= 0) {
+    display.style.color = '#3b6d11';
+  } else {
+    display.style.color = '#1a1a18';
+  }
+  setCounter.textContent = setCount > 0 ? ('Rests completed: ' + setCount) : '';
+}
+
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.25, 0.5].forEach((t) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = 880;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.2);
+    });
+  } catch(e) {}
+  if (navigator.vibrate) navigator.vibrate([200,100,200]);
+}
+
+function tick() {
+  remaining -= 1;
+  render();
+  if (remaining <= 0) {
+    clearInterval(intervalId);
+    beep();
+    setCount += 1;
+    if (autoRestartBox.checked) {
+      remaining = total;
+      render();
+      intervalId = setInterval(tick, 1000);
+    } else {
+      running = false;
+      startPauseBtn.textContent = 'Start';
+    }
+  }
+}
+
+function start() {
+  if (remaining <= 0) remaining = total;
+  running = true;
+  startPauseBtn.textContent = 'Pause';
+  intervalId = setInterval(tick, 1000);
+}
+
+function pause() {
+  running = false;
+  clearInterval(intervalId);
+  startPauseBtn.textContent = 'Start';
+}
+
+function setTime(s) {
+  clearInterval(intervalId);
+  running = false;
+  total = s;
+  remaining = s;
+  setCount = 0;
+  startPauseBtn.textContent = 'Start';
+  render();
+}
+
+document.getElementById('p60').addEventListener('click', () => setTime(60));
+document.getElementById('p90').addEventListener('click', () => setTime(90));
+document.getElementById('p120').addEventListener('click', () => setTime(120));
+document.getElementById('setCustom').addEventListener('click', () => {
+  const v = parseInt(document.getElementById('custom').value, 10);
+  if (!isNaN(v) && v > 0) setTime(v);
+});
+
+startPauseBtn.addEventListener('click', () => {
+  if (running) pause(); else start();
+});
+
+document.getElementById('reset').addEventListener('click', () => setTime(total));
+
+render();
+</script>
+
+</body>
+</html>
